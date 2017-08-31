@@ -1,6 +1,7 @@
 package filesystem
 
 import (
+	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
 	"io"
@@ -91,9 +92,6 @@ func (dirs *WatchDirs) Watch() {
 				log.Println("event:", event)
 				if event.Op&fsnotify.Write == fsnotify.Write {
 					log.Println("modified file:", event.Name)
-					/* var m runtime.MemStats
-					runtime.ReadMemStats(&m)
-					log.Printf("\nAlloc = %v\nTotalAlloc = %v\nSys = %v\nNumGC = %v\n\n", m.Alloc/1024, m.TotalAlloc/1024, m.Sys/1024, m.NumGC) */
 				}
 			case err := <-watcher.Errors:
 				log.Println("error:", err)
@@ -113,11 +111,17 @@ func (dirs *WatchDirs) Watch() {
 
 //Index ...Index all the files currently in the system
 func (dirs *WatchDirs) Index() {
+	var buffer bytes.Buffer
+	separator := string(filepath.Separator)
 	for _, dir := range dirs.Dirs {
 		files, _ := ioutil.ReadDir(dir)
 		for _, file := range files {
 			if !file.IsDir() {
-				hashJobs <- dir + "/" + file.Name()
+				buffer.WriteString(dir)
+				buffer.WriteString(separator)
+				buffer.WriteString(file.Name())
+				hashJobs <- buffer.String()
+				buffer.Reset()
 			}
 		}
 	}
@@ -146,7 +150,7 @@ func hashWorker(id int, jobs <-chan string, results chan<- string) {
 	}
 }
 
-//Creat a sha1 of a file of unknown size
+//Creat a sha1 of a file of any size
 func hashFile(file string) (string, error) {
 	f, err := os.Open(file)
 	if err != nil {
