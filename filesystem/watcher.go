@@ -1,6 +1,7 @@
 package filesystem
 
 import (
+	"backblaze-backup/database"
 	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
@@ -11,15 +12,21 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/boltdb/bolt"
+
 	"github.com/fsnotify/fsnotify"
 )
 
 var (
 	hashJobs    = make(chan string, 200)
-	hashResults = make(chan string, 1000)
+	hashResults = make(chan HashedFile, 1000)
 )
 
-const filechunk = 8192
+const (
+	filechunk              = 8192
+	hashIndexBucketName    = "HashIndex"
+	uploadStatusBucketName = "UploadStatus"
+)
 
 type WatchDirs struct {
 	Dirs []string
@@ -109,7 +116,11 @@ func (dirs *WatchDirs) Watch() {
 	<-done
 }
 
-//Index ...Index all the files currently in the system
+/*
+ *Index ...Index all the files currently in the system
+ *Get every file from every configured path and send that
+ *to a worker function to be hashed
+ */
 func (dirs *WatchDirs) Index() {
 	var buffer bytes.Buffer
 	separator := string(filepath.Separator)
@@ -125,7 +136,6 @@ func (dirs *WatchDirs) Index() {
 			}
 		}
 	}
-
 }
 
 //Synchronize ...Synchronize Index with Backblaze
@@ -135,18 +145,58 @@ func (dirs *WatchDirs) Synchronize() {
 func startHashWorkerPool(workers int) {
 	for i := 1; i <= workers; i++ {
 		go hashWorker(i, hashJobs, hashResults)
+		go boltIndexWorker(i, hashResults)
 	}
 }
 
-func hashWorker(id int, jobs <-chan string, results chan<- string) {
+func hashWorker(id int, jobs <-chan string, results chan<- HashedFile) {
 	for job := range jobs {
-		log.Println("Worker: ", id, "started job: ", job)
+		//log.Println("Worker: ", id, "started job: ", job)
 		hash, err := hashFile(job)
 		if err != nil {
 			log.Println(err)
-			//results <- hash
+
 		}
-		log.Println("Hash: ", hash)
+		//log.Println("Hash: ", hash)
+		results <- HashedFile{FileName: job, Hash: hash}
+	}
+}
+
+/*
+ *
+ */
+func boltIndexWorker(id int, jobs <-chan HashedFile) {
+	db := database.BoltConn
+	var err error
+	err = db.Update(func(tx *bolt.Tx) error {
+		_, err = tx.CreateBucketIfNotExists([]byte(hashIndexBucketName))
+		_, err = tx.CreateBucketIfNotExists([]byte(uploadStatusBucketName))
+		return err
+	})
+
+	for job := range jobs {
+		err := db.Update(func(tx *bolt.Tx) error {
+			hashBucket := tx.Bucket([]byte(hashIndexBucketName))
+			uploadStatusBucket := tx.Bucket([]byte(uploadStatusBucketName))
+			log.Println("Worker: ", id, "started bolt job: ", job)
+			fileHash := hashBucket.Get([]byte(job.FileName))
+			if fileHash != nil && string(fileHash) != job.Hash {
+				log.Println("Found a mismatched file")
+				err = uploadStatusBucket.Put([]byte(job.Hash), []byte("false"))
+			} else {
+				log.Println("No match found, creating new index")
+				err = hashBucket.Put([]byte(job.FileName), []byte(job.Hash))
+				err = uploadStatusBucket.Put([]byte(job.Hash), []byte("false"))
+			}
+			if err != nil {
+				log.Println(err)
+				return err
+			}
+			return nil
+		})
+		if err != nil {
+			log.Println(err)
+		}
 	}
 }
 
