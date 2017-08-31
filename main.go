@@ -6,6 +6,8 @@ import (
 	"log"
 
 	"github.com/boltdb/bolt"
+	"github.com/fsnotify/fsnotify"
+	"github.com/spf13/viper"
 )
 
 func main() {
@@ -17,8 +19,27 @@ func main() {
 		log.Fatal(err)
 	}
 	defer database.BoltConn.Close()
-	dirs := []string{"/tmp"}
+	viper.SetConfigType("yaml")
+	viper.SetConfigName("config")
+	viper.AddConfigPath("/etc/backblaze-backup")
+	viper.AddConfigPath("$HOME/.backblaze-backup")
+	viper.AddConfigPath(".")
+	err = viper.ReadInConfig()
+	viper.WatchConfig()
+	viper.OnConfigChange(func(e fsnotify.Event) {
+		log.Println("Config changed: ", e.Name)
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	//accountId := viper.Get("account-id")
+	//applicationKey := viper.Get("application-key")
+	watchDirs := viper.GetStringSlice("watch-dirs")
+	log.Println(watchDirs)
+	filesystem.Watches(watchDirs)
+	/*dirs := []string{"/tmp"}
+
 	go filesystem.Watches(dirs)
 	for {
-	}
+	}*/
 }

@@ -1,2 +1,4 @@
 *.txt
 *.db
+config.yml
+config.yaml
