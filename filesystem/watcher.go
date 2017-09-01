@@ -182,14 +182,23 @@ func boltIndexWorker(id int, jobs <-chan HashedFile) {
 			fileHash := hashBucket.Get([]byte(job.FileName))
 			if fileHash != nil && string(fileHash) != job.Hash {
 				log.Println("Found a mismatched file")
-				err = uploadStatusBucket.Put([]byte(job.Hash), []byte("false"))
-			} else {
+				err := uploadStatusBucket.Put([]byte(job.Hash), []byte("false"))
+				if err != nil {
+					log.Println("Mismatch err: ", err)
+				}
+			} else if fileHash == nil {
 				log.Println("No match found, creating new index")
-				err = hashBucket.Put([]byte(job.FileName), []byte(job.Hash))
+				err := hashBucket.Put([]byte(job.FileName), []byte(job.Hash))
+				if err != nil {
+					log.Println("Create Index Err: ", err)
+				}
 				err = uploadStatusBucket.Put([]byte(job.Hash), []byte("false"))
+				if err != nil {
+					log.Println("Creat Hash Err: ", err)
+				}
 			}
 			if err != nil {
-				log.Println(err)
+				log.Println("Bucket processing err: ", err)
 				return err
 			}
 			return nil
