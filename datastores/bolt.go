@@ -1,4 +1,4 @@
-package database
+package datastores
 
 import "github.com/boltdb/bolt"
 

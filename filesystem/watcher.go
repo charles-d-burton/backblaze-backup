@@ -1,7 +1,7 @@
 package filesystem
 
 import (
-	"backblaze-backup/database"
+	"backblaze-backup/datastores"
 	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
@@ -11,6 +11,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/boltdb/bolt"
 
@@ -20,6 +21,7 @@ import (
 var (
 	hashJobs    = make(chan string, 200)
 	hashResults = make(chan HashedFile, 1000)
+	separator   = string(filepath.Separator)
 )
 
 const (
@@ -41,26 +43,35 @@ type HashedFile struct {
 func Watches(tops []string) {
 	startHashWorkerPool(8)
 	var dirs WatchDirs
+	dirSet := make(map[string]bool)
 	for _, top := range tops {
 		err := filepath.Walk(top, func(path string, f os.FileInfo, err error) error {
 			if err != nil {
 				log.Println(err)
-				return err
+				//Return nil because I want to continue processing
+				return nil
 			}
 			//log.Println("File: ", path)
 			if f.IsDir() {
-				//log.Println("Path: ", path)
-				dirs.Dirs = append(dirs.Dirs, path)
+				//Maps can only have one key that matches, duplicates will be overwritten
+				dirSet[path] = true
 			}
 			return nil
 		})
 		if err != nil {
 			log.Println(err)
 		}
-		log.Println("Continuing Loop")
+		//log.Println("Continuing Loop")
+
 	}
-	log.Println("Starting Dedup: ")
-	dirs.Dedup()
+	if len(dirSet) > 0 {
+		dirSlice := make([]string, 0, len(dirSet))
+		for k := range dirSet {
+			//log.Println("Processing directory: ", k)
+			dirSlice = append(dirSlice, k)
+			dirs.Dirs = dirSlice
+		}
+	}
 	dirs.Index()
 	log.Println("Post Dedup: ")
 	for _, dir := range dirs.Dirs {
@@ -69,23 +80,10 @@ func Watches(tops []string) {
 	dirs.Watch()
 }
 
-//Dedup ...Remove all duplicate entires from configured directories
-func (dirs *WatchDirs) Dedup() {
-	log.Println("deduping")
-	uniqueSet := make(map[string]bool, len(dirs.Dirs))
-	for _, x := range dirs.Dirs {
-		uniqueSet[x] = true
-	}
-	result := make([]string, 0, len(uniqueSet))
-	for x := range uniqueSet {
-		result = append(result, x)
-	}
-	dirs.Dirs = result
-}
-
 //Watch ...Watch the list of created directories for changes
 func (dirs *WatchDirs) Watch() {
 	watcher, err := fsnotify.NewWatcher()
+	accumulator := datastores.GetAccumulator()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -97,8 +95,22 @@ func (dirs *WatchDirs) Watch() {
 			select {
 			case event := <-watcher.Events:
 				log.Println("event:", event)
-				if event.Op&fsnotify.Write == fsnotify.Write {
-					log.Println("modified file:", event.Name)
+				if strings.Contains(event.Name, "backblaze.db") {
+					watcher.Remove(event.Name)
+					return
+				}
+
+				switch {
+				case event.Op&fsnotify.Write == fsnotify.Write ||
+					event.Op&fsnotify.Create == fsnotify.Create ||
+					event.Op&fsnotify.Rename == fsnotify.Rename:
+
+					accumulator.Lock()
+					accumulator.Files[event.Name] = true
+					accumulator.Unlock()
+					//hashFile(event.Name)
+				default:
+					log.Println("no action")
 				}
 			case err := <-watcher.Errors:
 				log.Println("error:", err)
@@ -166,7 +178,7 @@ func hashWorker(id int, jobs <-chan string, results chan<- HashedFile) {
  *
  */
 func boltIndexWorker(id int, jobs <-chan HashedFile) {
-	db := database.BoltConn
+	db := datastores.BoltConn
 	var err error
 	err = db.Update(func(tx *bolt.Tx) error {
 		_, err = tx.CreateBucketIfNotExists([]byte(hashIndexBucketName))
@@ -223,17 +235,20 @@ func hashFile(file string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	size := info.Size()
+	if !info.IsDir() {
+		size := info.Size()
 
-	blocks := uint64(math.Ceil(float64(size) / float64(filechunk)))
-	hash := sha1.New()
+		blocks := uint64(math.Ceil(float64(size) / float64(filechunk)))
+		hash := sha1.New()
 
-	for i := uint64(0); i < blocks; i++ {
-		blocksize := int(math.Min(filechunk, float64(size-int64(i*filechunk))))
+		for i := uint64(0); i < blocks; i++ {
+			blocksize := int(math.Min(filechunk, float64(size-int64(i*filechunk))))
 
-		buf := make([]byte, blocksize)
-		f.Read(buf)
-		io.WriteString(hash, string(buf))
+			buf := make([]byte, blocksize)
+			f.Read(buf)
+			io.WriteString(hash, string(buf))
+		}
+		return hex.EncodeToString(hash.Sum(nil)), nil
 	}
-	return hex.EncodeToString(hash.Sum(nil)), nil
+	return "", err
 }
