@@ -1,7 +1,7 @@
 package main
 
 import (
-	"backblaze-backup/database"
+	"backblaze-backup/datastores"
 	"backblaze-backup/filesystem"
 	"log"
 
@@ -14,11 +14,11 @@ func main() {
 	// Open the my.db data file in your current directory.
 	// It will be created if it doesn't exist.
 	var err error
-	database.BoltConn, err = bolt.Open("backblaze.db", 0600, nil)
+	datastores.BoltConn, err = bolt.Open("backblaze.db", 0600, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer database.BoltConn.Close()
+	defer datastores.BoltConn.Close()
 	viper.SetConfigType("yaml")
 	viper.SetConfigName("config")
 	viper.AddConfigPath("/etc/backblaze-backup")

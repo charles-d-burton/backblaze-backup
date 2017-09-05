@@ -11,7 +11,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/boltdb/bolt"
 
@@ -48,7 +47,7 @@ func Watches(tops []string) {
 		err := filepath.Walk(top, func(path string, f os.FileInfo, err error) error {
 			if err != nil {
 				log.Println(err)
-				//Return nil because I want to continue processing
+				//Return nil because I want to continue processing, if you return something the walker stops
 				return nil
 			}
 			//log.Println("File: ", path)
@@ -72,11 +71,12 @@ func Watches(tops []string) {
 			dirs.Dirs = dirSlice
 		}
 	}
-	dirs.Index()
-	log.Println("Post Dedup: ")
 	for _, dir := range dirs.Dirs {
+		log.Println("Dir to Index: ")
 		log.Println(dir)
 	}
+	dirs.Index()
+
 	dirs.Watch()
 }
 
@@ -95,10 +95,6 @@ func (dirs *WatchDirs) Watch() {
 			select {
 			case event := <-watcher.Events:
 				log.Println("event:", event)
-				if strings.Contains(event.Name, "backblaze.db") {
-					watcher.Remove(event.Name)
-					return
-				}
 
 				switch {
 				case event.Op&fsnotify.Write == fsnotify.Write ||
@@ -107,6 +103,10 @@ func (dirs *WatchDirs) Watch() {
 
 					accumulator.Lock()
 					accumulator.Files[event.Name] = true
+					for accum := range accumulator.Files {
+						log.Println("Files accumulated: ")
+						log.Println(accum)
+					}
 					accumulator.Unlock()
 					//hashFile(event.Name)
 				default:
@@ -163,7 +163,7 @@ func startHashWorkerPool(workers int) {
 
 func hashWorker(id int, jobs <-chan string, results chan<- HashedFile) {
 	for job := range jobs {
-		//log.Println("Worker: ", id, "started job: ", job)
+		log.Println("Worker: ", id, "started job: ", job)
 		hash, err := hashFile(job)
 		if err != nil {
 			log.Println(err)
@@ -190,7 +190,7 @@ func boltIndexWorker(id int, jobs <-chan HashedFile) {
 		err := db.Update(func(tx *bolt.Tx) error {
 			hashBucket := tx.Bucket([]byte(hashIndexBucketName))
 			uploadStatusBucket := tx.Bucket([]byte(uploadStatusBucketName))
-			log.Println("Worker: ", id, "started bolt job: ", job)
+			//log.Println("Worker: ", id, "started bolt job: ", job)
 			fileHash := hashBucket.Get([]byte(job.FileName))
 			if fileHash != nil && string(fileHash) != job.Hash {
 				log.Println("Found a mismatched file")
