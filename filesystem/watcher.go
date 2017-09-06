@@ -167,15 +167,14 @@ func hashWorker(id int, jobs <-chan string, results chan<- MetaData) {
 	for job := range jobs {
 		log.Println("Worker: ", id, "started job: ", job)
 		file, err := os.Open(job)
-		defer file.Close()
 		if err != nil {
 			log.Println("File error: ", err)
-			return
+			continue
 		}
 		stat, err := file.Stat()
 		if err != nil {
 			log.Println("File error: ", err)
-			return
+			continue
 		}
 		err = db.View(func(tx *bolt.Tx) error {
 			fileIndexBucket := tx.Bucket([]byte(fileIndexName))
@@ -188,6 +187,7 @@ func hashWorker(id int, jobs <-chan string, results chan<- MetaData) {
 					return err
 				}
 				if stat.Size() != fileMetaData.GetSize() {
+
 					hash, err := hashFile(*file)
 					if err != nil {
 						return err
@@ -198,6 +198,8 @@ func hashWorker(id int, jobs <-chan string, results chan<- MetaData) {
 						Sha1: proto.String(hash),
 					}
 					results <- fileMetaData
+				} else {
+					log.Println("File sizes match!")
 				}
 			} else {
 				hash, err := hashFile(*file)
@@ -216,8 +218,8 @@ func hashWorker(id int, jobs <-chan string, results chan<- MetaData) {
 		//hash, err := hashFile(job)
 		if err != nil {
 			log.Println(err)
-
 		}
+		file.Close()
 		//log.Println("Hash: ", hash)
 		//results <- HashedFile{FileName: job, Hash: hash}
 	}
