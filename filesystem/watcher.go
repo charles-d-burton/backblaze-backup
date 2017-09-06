@@ -103,8 +103,8 @@ func (dirs *WatchDirs) Watch() {
 
 					accumulator.Lock()
 					accumulator.Files[event.Name] = true
+					log.Println("Files accumulated: ")
 					for accum := range accumulator.Files {
-						log.Println("Files accumulated: ")
 						log.Println(accum)
 					}
 					accumulator.Unlock()

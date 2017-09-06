@@ -12,9 +12,11 @@ type accumulator struct {
 var accumulatorInstance *accumulator
 var once sync.Once
 
+//GetAccumulator ...Return a reference to the accumulator
 func GetAccumulator() *accumulator {
 	once.Do(func() {
 		accumulatorInstance = &accumulator{}
+		accumulatorInstance.Files = make(map[string]bool)
 	})
 	return accumulatorInstance
 }
