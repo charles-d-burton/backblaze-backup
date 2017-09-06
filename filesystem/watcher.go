@@ -199,6 +199,17 @@ func hashWorker(id int, jobs <-chan string, results chan<- MetaData) {
 					}
 					results <- fileMetaData
 				}
+			} else {
+				hash, err := hashFile(*file)
+				if err != nil {
+					return err
+				}
+				fileMetaData := MetaData{
+					Name: proto.String(job),
+					Size: proto.Int64(stat.Size()),
+					Sha1: proto.String(hash),
+				}
+				results <- fileMetaData
 			}
 			return nil
 		})
