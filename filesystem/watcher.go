@@ -13,29 +13,23 @@ import (
 	"path/filepath"
 
 	"github.com/boltdb/bolt"
-
 	"github.com/fsnotify/fsnotify"
+	"github.com/gogo/protobuf/proto"
 )
 
 var (
 	hashJobs    = make(chan string, 200)
-	hashResults = make(chan HashedFile, 1000)
+	hashResults = make(chan MetaData, 1000)
 	separator   = string(filepath.Separator)
 )
 
 const (
-	filechunk              = 8192
-	hashIndexBucketName    = "HashIndex"
-	uploadStatusBucketName = "UploadStatus"
+	filechunk     = 8192
+	fileIndexName = "FileIndex"
 )
 
 type WatchDirs struct {
 	Dirs []string
-}
-
-type HashedFile struct {
-	Hash     string
-	FileName string
 }
 
 //Watches ...Recursively walk the filesystem, entrypoint to file watching
@@ -161,57 +155,110 @@ func startHashWorkerPool(workers int) {
 	}
 }
 
-func hashWorker(id int, jobs <-chan string, results chan<- HashedFile) {
+func hashWorker(id int, jobs <-chan string, results chan<- MetaData) {
+	db := datastores.BoltConn
+	err := db.Update(func(tx *bolt.Tx) error {
+		_, err := tx.CreateBucketIfNotExists([]byte(fileIndexName))
+		return err
+	})
+	if err != nil {
+		log.Fatal("Unable to open Bolt: ", err)
+	}
 	for job := range jobs {
 		log.Println("Worker: ", id, "started job: ", job)
-		hash, err := hashFile(job)
+		file, err := os.Open(job)
+		defer file.Close()
+		if err != nil {
+			log.Println("File error: ", err)
+			return
+		}
+		stat, err := file.Stat()
+		if err != nil {
+			log.Println("File error: ", err)
+			return
+		}
+		err = db.View(func(tx *bolt.Tx) error {
+			fileIndexBucket := tx.Bucket([]byte(fileIndexName))
+			fileData := fileIndexBucket.Get([]byte(job))
+			if fileData != nil {
+				fileMetaData := &MetaData{}
+				err = proto.Unmarshal(fileData, fileMetaData)
+				if err != nil {
+					log.Println("Unmarshaling error: ", err)
+					return err
+				}
+				if stat.Size() != fileMetaData.GetSize() {
+					hash, err := hashFile(*file)
+					if err != nil {
+						return err
+					}
+					fileMetaData := MetaData{
+						Name: proto.String(job),
+						Size: proto.Int64(stat.Size()),
+						Sha1: proto.String(hash),
+					}
+					results <- fileMetaData
+				}
+			}
+			return nil
+		})
+		//hash, err := hashFile(job)
 		if err != nil {
 			log.Println(err)
 
 		}
 		//log.Println("Hash: ", hash)
-		results <- HashedFile{FileName: job, Hash: hash}
+		//results <- HashedFile{FileName: job, Hash: hash}
 	}
 }
 
 /*
  *
  */
-func boltIndexWorker(id int, jobs <-chan HashedFile) {
+func boltIndexWorker(id int, jobs <-chan MetaData) {
 	db := datastores.BoltConn
 	var err error
 	err = db.Update(func(tx *bolt.Tx) error {
-		_, err = tx.CreateBucketIfNotExists([]byte(hashIndexBucketName))
-		_, err = tx.CreateBucketIfNotExists([]byte(uploadStatusBucketName))
+		_, err = tx.CreateBucketIfNotExists([]byte(fileIndexName))
 		return err
 	})
 
 	for job := range jobs {
 		err := db.Update(func(tx *bolt.Tx) error {
-			hashBucket := tx.Bucket([]byte(hashIndexBucketName))
-			uploadStatusBucket := tx.Bucket([]byte(uploadStatusBucketName))
+
+			fileIndexBucket := tx.Bucket([]byte(fileIndexName))
 			//log.Println("Worker: ", id, "started bolt job: ", job)
-			fileHash := hashBucket.Get([]byte(job.FileName))
-			if fileHash != nil && string(fileHash) != job.Hash {
-				log.Println("Found a mismatched file")
-				err := uploadStatusBucket.Put([]byte(job.Hash), []byte("false"))
+			//Get the previously saved object
+			fileData := fileIndexBucket.Get([]byte(job.GetName()))
+			if fileData != nil {
+				fileMetaData := &MetaData{}
+				err = proto.Unmarshal(fileData, fileMetaData)
 				if err != nil {
-					log.Println("Mismatch err: ", err)
+					log.Fatal("Unmarshaling error: ", err)
+					return err
 				}
-			} else if fileHash == nil {
-				log.Println("No match found, creating new index")
-				err := hashBucket.Put([]byte(job.FileName), []byte(job.Hash))
-				if err != nil {
-					log.Println("Create Index Err: ", err)
+				//Compare the Sha signatures of the current job with the recorded job
+				if job.GetSha1() != fileMetaData.GetSha1() {
+					//They don't match so marshal it into a protobuf
+					data, err := proto.Marshal(&job)
+					if err != nil {
+						log.Fatal("Marshaling error: ", err)
+						return err
+					}
+					//Save the new metadata replacing the old object
+					fileIndexBucket.Put([]byte(job.GetName()), data)
 				}
-				err = uploadStatusBucket.Put([]byte(job.Hash), []byte("false"))
-				if err != nil {
-					log.Println("Creat Hash Err: ", err)
+				//Did not find a file with that name
+			} else {
+				//Make sure it's not an empty name
+				if job.GetName() != "" {
+					data, err := proto.Marshal(&job)
+					if err != nil {
+						log.Fatal("Marshaling error: ", err)
+						return err
+					}
+					fileIndexBucket.Put([]byte(job.GetName()), data)
 				}
-			}
-			if err != nil {
-				log.Println("Bucket processing err: ", err)
-				return err
 			}
 			return nil
 		})
@@ -222,16 +269,10 @@ func boltIndexWorker(id int, jobs <-chan HashedFile) {
 }
 
 //Creat a sha1 of a file of any size
-func hashFile(file string) (string, error) {
-	f, err := os.Open(file)
-	if err != nil {
-		log.Println(err)
-		return "", err
-	}
-	defer f.Close()
+func hashFile(file os.File) (string, error) {
 
 	//get information about the file
-	info, err := f.Stat()
+	info, err := file.Stat()
 	if err != nil {
 		return "", err
 	}
@@ -245,7 +286,7 @@ func hashFile(file string) (string, error) {
 			blocksize := int(math.Min(filechunk, float64(size-int64(i*filechunk))))
 
 			buf := make([]byte, blocksize)
-			f.Read(buf)
+			file.Read(buf)
 			io.WriteString(hash, string(buf))
 		}
 		return hex.EncodeToString(hash.Sum(nil)), nil
