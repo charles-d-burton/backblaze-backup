@@ -21,7 +21,7 @@ import (
 
 var (
 	checkFiles               = make(chan string, 2000)
-	hasher                   = make(chan string, 20000)
+	hasher                   = make(chan string, 2000)
 	hashResults              = make(chan *MsgpMetaData, 100)
 	separator                = string(filepath.Separator)
 	totalIndexedData   int64 = 0

@@ -4,6 +4,10 @@
 	"GodepVersion": "v79",
 	"Deps": [
 		{
+			"ImportPath": "code.cloudfoundry.org/bytefmt",
+			"Rev": "f4415fafc5619dd75599a54a7c91fb3948ad58bd"
+		},
+		{
 			"ImportPath": "github.com/boltdb/bolt",
 			"Comment": "v1.3.1",
 			"Rev": "2f1ce7a837dcb8da3ec595b1dac9d0632f0f99e8"
@@ -55,22 +59,6 @@
 			"Rev": "be5ece7dd465ab0765a9682137865547526d1dfb"
 		},
 		{
-			"ImportPath": "github.com/mailru/easyjson",
-			"Rev": "2a92e673c9a6302dd05c3a691ae1f24aef46457d"
-		},
-		{
-			"ImportPath": "github.com/mailru/easyjson/buffer",
-			"Rev": "2a92e673c9a6302dd05c3a691ae1f24aef46457d"
-		},
-		{
-			"ImportPath": "github.com/mailru/easyjson/jlexer",
-			"Rev": "2a92e673c9a6302dd05c3a691ae1f24aef46457d"
-		},
-		{
-			"ImportPath": "github.com/mailru/easyjson/jwriter",
-			"Rev": "2a92e673c9a6302dd05c3a691ae1f24aef46457d"
-		},
-		{
 			"ImportPath": "github.com/mitchellh/mapstructure",
 			"Rev": "d0303fe809921458f417bcf828397a65db30a7e4"
 		},
@@ -78,6 +66,10 @@
 			"ImportPath": "github.com/pelletier/go-toml",
 			"Comment": "v1.0.0-9-g9c1b4e3",
 			"Rev": "9c1b4e331f1e3d98e72600677699fbe212cd6d16"
+		},
+		{
+			"ImportPath": "github.com/philhofer/fwd",
+			"Rev": "bb6d471dc95d4fe11e432687f8b70ff496cf3136"
 		},
 		{
 			"ImportPath": "github.com/spf13/afero",
@@ -105,6 +97,11 @@
 			"ImportPath": "github.com/spf13/viper",
 			"Comment": "v1.0.0",
 			"Rev": "25b30aa063fc18e48662b86996252eabdcf2f0c7"
+		},
+		{
+			"ImportPath": "github.com/tinylib/msgp/msgp",
+			"Comment": "1.0.2-5-g4a23c71",
+			"Rev": "4a23c718c2167f44ec3318034a7a2b020281412b"
 		},
 		{
 			"ImportPath": "golang.org/x/sys/unix",
