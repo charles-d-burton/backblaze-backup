@@ -1,8 +1,8 @@
 syntax = "proto2";
 package filesystem;
 
-message MetaData {
+/* message MetaData {
 	optional string Name = 1;
 	optional int64 Size  = 2;
 	optional string Sha1 = 3;
-}
+} */

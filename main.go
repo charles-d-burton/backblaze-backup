@@ -4,6 +4,7 @@ import (
 	"backblaze-backup/datastores"
 	"backblaze-backup/filesystem"
 	"log"
+	"time"
 
 	"github.com/boltdb/bolt"
 	"github.com/fsnotify/fsnotify"
@@ -14,7 +15,7 @@ func main() {
 	// Open the my.db data file in your current directory.
 	// It will be created if it doesn't exist.
 	var err error
-	datastores.BoltConn, err = bolt.Open("backblaze.db", 0600, nil)
+	datastores.BoltConn, err = bolt.Open("backblaze.db", 0600, &bolt.Options{Timeout: 1 * time.Second})
 	if err != nil {
 		log.Fatal(err)
 	}
