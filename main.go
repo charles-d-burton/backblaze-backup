@@ -53,9 +53,4 @@ func main() {
 	}
 	log.Println(watchDirs)
 	filesystem.Watches(watchDirs)
-	/*dirs := []string{"/tmp"}
-
-	go filesystem.Watches(dirs)
-	for {
-	}*/
 }

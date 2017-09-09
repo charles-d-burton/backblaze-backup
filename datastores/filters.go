@@ -7,6 +7,7 @@ import (
 
 var filters = make([]*regexp.Regexp, 0, 1)
 
+//SetFilters ...Compile the configured filters and add them to the array
 func SetFilters(newFilters []string) {
 	for _, filter := range newFilters {
 		log.Println("Filter: ", filter)
@@ -18,6 +19,7 @@ func SetFilters(newFilters []string) {
 	}
 }
 
+//GetFilters ...Retrieve the list of filters
 func GetFilters() []*regexp.Regexp {
 	return filters
 }
