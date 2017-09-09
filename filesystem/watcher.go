@@ -13,15 +13,13 @@ import (
 	"path/filepath"
 	"sync/atomic"
 
-	"code.cloudfoundry.org/bytefmt"
-
 	"github.com/boltdb/bolt"
 	"github.com/fsnotify/fsnotify"
 )
 
 var (
 	checkFiles               = make(chan string, 2000)
-	hasher                   = make(chan string, 2000)
+	hasher                   = make(chan string, 20000)
 	hashResults              = make(chan *MsgpMetaData, 100)
 	separator                = string(filepath.Separator)
 	totalIndexedData   int64 = 0
@@ -79,10 +77,10 @@ func Watches(tops []string) {
 			dirs.Dirs = dirSlice
 		}
 	}
-	for _, dir := range dirs.Dirs {
+	/* for _, dir := range dirs.Dirs {
 		log.Println("Dir to Index: ")
 		log.Println(dir)
-	}
+	} */
 	dirs.Index()
 
 	dirs.Watch()
@@ -102,7 +100,7 @@ func (dirs *WatchDirs) Watch() {
 		for {
 			select {
 			case event := <-watcher.Events:
-				log.Println("event:", event)
+				//log.Println("event:", event)
 
 				switch {
 				case event.Op&fsnotify.Write == fsnotify.Write ||
@@ -110,11 +108,16 @@ func (dirs *WatchDirs) Watch() {
 					event.Op&fsnotify.Rename == fsnotify.Rename:
 
 					accumulator.Lock()
-					accumulator.Files[event.Name] = true
-					log.Println("Files accumulated: ")
+					if !filterFile(event.Name) {
+						accumulator.Files[event.Name] = true
+					} else {
+						log.Println("Filtering File: ", event.Name)
+					}
+
+					/* log.Println("Files accumulated: ")
 					for accum := range accumulator.Files {
 						log.Println(accum)
-					}
+					} */
 					accumulator.Unlock()
 					//hashFile(event.Name)
 				default:
@@ -127,7 +130,7 @@ func (dirs *WatchDirs) Watch() {
 	}()
 
 	for _, dir := range dirs.Dirs {
-		log.Println("Watching dir: ", dir)
+		//log.Println("Watching dir: ", dir)
 		err = watcher.Add(dir)
 		if err != nil {
 			log.Println(err)
@@ -151,7 +154,12 @@ func (dirs *WatchDirs) Index() {
 				buffer.WriteString(dir)
 				buffer.WriteString(separator)
 				buffer.WriteString(file.Name())
-				checkFiles <- buffer.String()
+				fileName := buffer.String()
+				if !filterFile(fileName) {
+					checkFiles <- fileName
+				} else {
+					log.Println("Filtering File: ", fileName)
+				}
 				buffer.Reset()
 			}
 		}
@@ -186,7 +194,7 @@ func checkFile(id int, jobs <-chan string, results chan<- string) {
 		}
 		file.Close()
 		atomic.AddInt64(&totalProcessedData, stat.Size())
-		log.Println("Total Data Processed: ", bytefmt.ByteSize(uint64(totalProcessedData)))
+		//log.Println("Total Data Processed: ", bytefmt.ByteSize(uint64(totalProcessedData)))
 		sizeMatch := false
 		err = db.View(func(tx *bolt.Tx) error {
 			fileIndexBucket := tx.Bucket([]byte(fileIndexName))
@@ -201,9 +209,9 @@ func checkFile(id int, jobs <-chan string, results chan<- string) {
 				if stat.Size() != fileMetaData.Size {
 					sizeMatch = true
 					//results <- job
-				} else {
+				} /* else {
 					log.Println("File sizes match!")
-				}
+				} */
 			} else {
 				sizeMatch = true
 				//results <- job
@@ -253,7 +261,7 @@ func fileWorker(id int, jobs <-chan string, results chan<- *MsgpMetaData) {
 func boltIndexWorker(id int, jobs <-chan *MsgpMetaData) {
 	db := datastores.BoltConn
 	for job := range jobs {
-		log.Println("Worker: ", id, "started bolt job: ", job.Name)
+		//log.Println("Worker: ", id, "started bolt job: ", job.Name)
 
 		err := db.Batch(func(tx *bolt.Tx) error {
 
@@ -305,4 +313,17 @@ func hashFile(f string) (string, int64, error) {
 		return hex.EncodeToString(hash.Sum(nil)), info.Size(), nil
 	}
 	return "", 0, err
+}
+
+func filterFile(file string) bool {
+	for _, filter := range datastores.GetFilters() {
+
+		matched := filter.MatchString(file)
+		if matched {
+			//log.Println("Filtering on: ", filter.String())
+			//log.Println("Filtering file: ", file)
+			return matched
+		}
+	}
+	return false
 }

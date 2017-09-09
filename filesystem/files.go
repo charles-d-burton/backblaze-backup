@@ -22,7 +22,10 @@ go:generate protoc --go_out=. files.proto
 
 //go:generate msgp
 type MsgpMetaData struct {
-	Name string `msg:"name"`
-	Size int64  `msg:"size"`
-	Sha1 string `msg:"sha1"`
+	Name     string   `msg:"name"`
+	Size     int64    `msg:"size"`
+	Sha1     string   `msg:"sha1"`
+	BackedUp bool     `msg:"backed"`
+	Versions []string `msg:"versions"`
+	Delete   bool     `msg:"delete"`
 }

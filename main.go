@@ -4,6 +4,7 @@ import (
 	"backblaze-backup/datastores"
 	"backblaze-backup/filesystem"
 	"log"
+	"runtime"
 	"time"
 
 	"github.com/boltdb/bolt"
@@ -36,6 +37,20 @@ func main() {
 	//accountId := viper.Get("account-id")
 	//applicationKey := viper.Get("application-key")
 	watchDirs := viper.GetStringSlice("watch-dirs")
+	globals := viper.GetStringSlice("ignore-filters.global")
+	if runtime.GOOS == "linux" {
+		filters := viper.GetStringSlice("ignore-filters.linux")
+		filters = append(filters, globals...)
+		datastores.SetFilters(filters)
+	} else if runtime.GOOS == "windows" {
+		filters := viper.GetStringSlice("ignore-filters.windows")
+		filters = append(filters, globals...)
+		datastores.SetFilters(filters)
+	} else if runtime.GOOS == "darwin" {
+		filters := viper.GetStringSlice("ignore-filters.apple")
+		filters = append(filters, globals...)
+		datastores.SetFilters(filters)
+	}
 	log.Println(watchDirs)
 	filesystem.Watches(watchDirs)
 	/*dirs := []string{"/tmp"}
