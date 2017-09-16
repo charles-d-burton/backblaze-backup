@@ -1,31 +1,35 @@
 package filesystem
 
-/*
-go:generate protoc --go_out=. files.proto
-*/
+import (
+	"backblaze-backup/datastores"
+	"log"
 
-/*func MarshalMetaData(md *MetaData) ([]byte, error) {
-	return proto.Marshal(&MetaData{
-		Name: proto.String(*md.Name),
-		Size: proto.Int64(int64(*md.Size)),
-		Sha1: proto.String(*md.Sha1),
+	"github.com/boltdb/bolt"
+	"github.com/gogo/protobuf/proto"
+)
+
+//go:generate protoc --go_out=. files.proto
+
+//RecordMetaData ... Take a MetaData object and record it in boltDB
+func (md *MetaData) RecordMetaData() error {
+	db := datastores.BoltConn
+	//log.Println("Worker: ", id, "started bolt job: ", job.Name)
+
+	err := db.Batch(func(tx *bolt.Tx) error {
+
+		fileIndexBucket := tx.Bucket([]byte(fileIndexName))
+		//log.Println("Worker: ", id, "started bolt job: ", job.GetName())
+
+		//Make sure it's not an empty name
+		if md.Name != "" {
+			data, err := proto.Marshal(md)
+			if err != nil {
+				log.Println("Marshaling error: ", err)
+				return err
+			}
+			fileIndexBucket.Put([]byte(md.Name), data)
+		}
+		return nil
 	})
-}*/
-
-/*func UnmarshalMetaData(data []byte, md *MetaData) error {
-	var pmd MetaData
-	if err := proto.Unmarshal(data, &pmd); err != nil {
-		return err
-	}
-	md.Name = pmd.GetName()
-}*/
-
-//go:generate msgp
-type MsgpMetaData struct {
-	Name     string   `msg:"name"`
-	Size     int64    `msg:"size"`
-	Sha1     string   `msg:"sha1"`
-	BackedUp bool     `msg:"backed"`
-	Versions []string `msg:"versions"`
-	Delete   bool     `msg:"delete"`
+	return err
 }

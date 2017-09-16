@@ -1,8 +1,10 @@
-syntax = "proto2";
+syntax = "proto3";
 package filesystem;
 
-/* message MetaData {
-	optional string Name = 1;
-	optional int64 Size  = 2;
-	optional string Sha1 = 3;
-} */
+ message MetaData {
+	string Name = 1;
+	int64 Size  = 2;
+	string Sha1 = 3;
+	bool BackedUp = 4;
+	repeated string Versions = 5;
+} 
