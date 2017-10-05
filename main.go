@@ -3,6 +3,7 @@ package main
 import (
 	"backblaze-backup/datastores"
 	"backblaze-backup/filesystem"
+	"backblaze-backup/requests"
 	"log"
 	"runtime"
 	"time"
@@ -52,5 +53,10 @@ func main() {
 		datastores.SetFilters(filters)
 	}
 	log.Println(watchDirs)
+	initializeBackblaze()
 	filesystem.Watches(watchDirs)
+}
+
+func initializeBackblaze() {
+	requests.CreateBackblazeBucket()
 }

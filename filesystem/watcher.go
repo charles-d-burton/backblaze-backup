@@ -5,12 +5,15 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
+	"time"
 
 	"github.com/fsnotify/fsnotify"
 )
 
 type WatchDirs struct {
-	Dirs []string
+	mutex sync.RWMutex
+	Dirs  []string
 }
 
 /*
@@ -22,6 +25,7 @@ func Watches(tops []string) {
 	initBolt()
 	startHashWorkerPool(8)
 	var dirs WatchDirs
+	dirs.mutex.Lock()
 	dirSet := make(map[string]bool)
 	for _, top := range tops {
 		err := filepath.Walk(top, func(path string, f os.FileInfo, err error) error {
@@ -49,8 +53,10 @@ func Watches(tops []string) {
 			dirs.Dirs = dirSlice
 		}
 	}
-	go dirs.Index()
+	dirs.mutex.Unlock()
+	go dirs.Index(false)
 	go dirs.Watch()
+	go dirs.ScheduleIndex()
 	//Block forever
 	select {}
 }
@@ -59,6 +65,7 @@ func Watches(tops []string) {
 func (dirs *WatchDirs) Watch() {
 	watcher, err := fsnotify.NewWatcher()
 	accumulator := datastores.GetAccumulator()
+	go scheduleSweep()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -108,6 +115,24 @@ func (dirs *WatchDirs) Watch() {
 		}
 	}
 	<-done
+}
+
+//Clear out the accumulated files every five minutes.
+func scheduleSweep() {
+	ticker := time.NewTicker(time.Minute * 5)
+	for t := range ticker.C {
+		accumulator := datastores.GetAccumulator()
+		accumulator.Lock()
+		log.Println("Clearing accumulated file changes: ", t)
+		for file := range accumulator.Files {
+			log.Println("Clearing file: ", file)
+			checkFiles <- file
+			delete(accumulator.Files, file)
+		}
+		accumulator.Unlock()
+
+	}
+
 }
 
 //Synchronize ...Synchronize Index with Backblaze

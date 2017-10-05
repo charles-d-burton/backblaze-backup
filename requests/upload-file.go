@@ -31,4 +31,5 @@ func (upload *UploadUrl) UploadFile(file string) error {
 	fmt.Printf("\nResponse Time: %v", upLoadFile.Time())
 	fmt.Printf("\nResponse Recevied At: %v", upLoadFile.ReceivedAt())
 	fmt.Printf("\nResponse Body: %v", string(upLoadFile.Body()))
+	return err
 }

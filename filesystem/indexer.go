@@ -4,6 +4,7 @@ import (
 	"backblaze-backup/datastores"
 	"bytes"
 	"crypto/sha1"
+	"encoding/binary"
 	"encoding/hex"
 	"io"
 	"io/ioutil"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync/atomic"
+	"time"
 
 	"github.com/boltdb/bolt"
 	"github.com/gogo/protobuf/proto"
@@ -21,13 +23,10 @@ var (
 	hasher     = make(chan string, 20000)
 	separator  = string(filepath.Separator)
 
-	totalIndexedData   int64 = 0
-	totalProcessedData int64 = 0
-)
+	totalIndexedData   int64
+	totalProcessedData int64
 
-const (
-	filechunk = 8192
-	//filechunk = 1048576
+	fullIndex = false
 )
 
 /*
@@ -35,9 +34,12 @@ const (
  *Get every file from every configured path and send that
  *to a worker function to be hashed
  */
-func (dirs *WatchDirs) Index() {
+func (dirs *WatchDirs) Index(full bool) {
+	dirs.mutex.Lock()
+	defer dirs.mutex.Unlock()
 	var buffer bytes.Buffer
 	separator := string(filepath.Separator)
+	fullIndex = full
 	for _, dir := range dirs.Dirs {
 		files, _ := ioutil.ReadDir(dir)
 		for _, file := range files {
@@ -53,15 +55,52 @@ func (dirs *WatchDirs) Index() {
 			}
 		}
 	}
+	//Reset the indexer when indexing is complete
+	fullIndex = false
+}
+
+//ScheduleIndex ... Schedule a full Reindex of the database
+func (dirs *WatchDirs) ScheduleIndex() {
+	//Schedule the check for every 30 seconds
+	ticker := time.NewTicker(time.Second * 30)
+	for t := range ticker.C {
+		log.Println("Checking for Reindex", t)
+		db := datastores.BoltConn
+		err := db.Update(func(tx *bolt.Tx) error {
+			lastIndexBucket := tx.Bucket([]byte(lastFullIndexBucket))
+			last := lastIndexBucket.Get([]byte("last"))
+			//No last index done, schedule it starting now
+			if last == nil {
+				log.Println("No scheduled index ran")
+				b := make([]byte, 8)
+				log.Println("Updating with time: ", time.Now().Unix())
+				binary.LittleEndian.PutUint64(b, uint64(time.Now().Unix()))
+				lastIndexBucket.Put([]byte("last"), b)
+			} else {
+				//Check if time difference is greater than 30 days (2592000 seconds)
+				if (uint64(time.Now().Unix()) - uint64(binary.LittleEndian.Uint64(last))) > 2592000 {
+					log.Println("Time since last reindex is greater than threshold!  Running a full index!")
+					b := make([]byte, 8)
+					binary.LittleEndian.PutUint64(b, uint64(time.Now().Unix()))
+					lastIndexBucket.Put([]byte("last"), b)
+					go dirs.Index(true)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			log.Println(err)
+		}
+	}
 }
 
 func startHashWorkerPool(workers int) {
 	for i := 1; i <= workers; i++ {
 		go checkFile(i, checkFiles, hasher)
-	}
-	//Start only one file worker, this makes the IO on spinning rust a bit better
-	go fileWorker(1, hasher)
 
+	}
+	go fileWorker(1, hasher)
+	//Start only one file worker, this makes the IO on spinning rust a bit better
 }
 
 func checkFile(id int, jobs <-chan string, results chan<- string) {
@@ -82,13 +121,19 @@ func checkFile(id int, jobs <-chan string, results chan<- string) {
 		file.Close()
 		atomic.AddInt64(&totalProcessedData, stat.Size())
 		//log.Println("Total Data Processed: ", bytefmt.ByteSize(uint64(totalProcessedData)))
-		sizeMatch, err := checkFileBySize(fileName, stat.Size())
-		if err != nil {
-			log.Println(err)
-		} else {
-			if sizeMatch {
-				results <- fileName
+		//Optionally bypass the size check and force a full Reindex
+		if !fullIndex {
+			sizeMatch, err := checkFileBySize(fileName, stat.Size())
+			if err != nil {
+				log.Println(err)
+			} else {
+				if !sizeMatch {
+					results <- fileName
+				}
 			}
+		} else {
+			log.Println("Forcing a full reindex")
+			results <- fileName
 		}
 	}
 }
@@ -99,7 +144,7 @@ func checkFile(id int, jobs <-chan string, results chan<- string) {
  */
 func checkFileBySize(name string, size int64) (bool, error) {
 	db := datastores.BoltConn
-	match := false
+	match := true
 	err := db.View(func(tx *bolt.Tx) error {
 		fileIndexBucket := tx.Bucket([]byte(fileIndexName))
 		fileData := fileIndexBucket.Get([]byte(name))
@@ -111,10 +156,10 @@ func checkFileBySize(name string, size int64) (bool, error) {
 				return err
 			}
 			if size != fileMetaData.Size {
-				match = true
+				match = false
 			}
 		} else {
-			match = true
+			match = false
 		}
 		return nil
 	})
