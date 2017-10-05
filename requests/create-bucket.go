@@ -12,6 +12,7 @@ import (
 
 const b2CreateBucket = "/b2api/v1/b2_create_bucket"
 
+//CreateBackblazeBucket ... Create the bucket based on hostnamet to put file data
 func CreateBackblazeBucket() error {
 	authorization, err := GetAuthorization(viper.GetString("account-id"), viper.GetString("application-key"))
 	name, err := os.Hostname()
