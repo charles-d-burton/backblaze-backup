@@ -58,5 +58,10 @@ func main() {
 }
 
 func initializeBackblaze() {
-	requests.CreateBackblazeBucket()
+	authorization, err := requests.GetAuthorization(viper.GetString("account-id"), viper.GetString("application-key"))
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	authorization.CreateBackblazeBucket()
 }
