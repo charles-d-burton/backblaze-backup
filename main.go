@@ -63,5 +63,9 @@ func initializeBackblaze() {
 		log.Println(err)
 		return
 	}
-	authorization.CreateBackblazeBucket()
+	bucketid, err := authorization.CreateBackblazeBucket()
+	if bucketid != "" && err == nil {
+		log.Println("Bucket ID: ", bucketid)
+		err = authorization.ListAllFiles(bucketid)
+	}
 }
