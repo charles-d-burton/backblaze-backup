@@ -18,7 +18,6 @@ type AuthorizationResponse struct {
 
 func GetAuthorization(id, token string) (AuthorizationResponse, error) {
 	keyString := id + ":" + token
-	//keyString := "3e765ed894e9:001be9d440e3e3c22b14a304c35f6376f19ad0c9dd"
 	sEnc := "Basic " + base64.StdEncoding.EncodeToString([]byte(keyString))
 	getToken, err := resty.R().
 		SetHeader("Authorization", sEnc).

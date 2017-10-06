@@ -30,6 +30,8 @@ type B2Bucket struct {
 	LifeCycleRules json.RawMessage `json:"lifecycleRules"`
 }
 
+//TODO:  Add in handler to check response status codes
+
 //CreateBackblazeBucket ... Create the bucket based on hostnamet to put file data, if bucket exists return bucketid
 func (auth *AuthorizationResponse) CreateBackblazeBucket() (string, error) {
 

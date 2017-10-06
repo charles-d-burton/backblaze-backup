@@ -1,0 +1,10 @@
+syntax = "proto3";
+package requests;
+
+ message MetaData {
+	string FileName = 1;
+	int64 FileLength  = 2;
+	string Sha1 = 3;
+	string FileID = 4;
+    string BucketID = 5;
+} 
